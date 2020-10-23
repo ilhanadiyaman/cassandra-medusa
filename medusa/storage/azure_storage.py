@@ -39,11 +39,18 @@ class AzureStorage(AbstractStorage):
         return path
 
     def upload_blobs(self, src, dest):
+        # After uploading file Azure doesn't set "Content-MD5" header.
+        # Only item's etag hash is available.
         manifest = medusa.storage.concurrent.upload_blobs(
             self, src, dest, self.bucket,
             max_workers=self.config.concurrent_transfers
         )
+        # Because of that problem, we reiterate the list of the objects in
+        # the directory.
         objects = self.list_objects(dest)
+        # After overwriting some files, immediately listing the directory will return
+        # multiple instances of the same file. Here, we're checking if we are correctly
+        # adding only single instance of the file.
         new_manifest = []
         for obj in objects:
             for item in manifest:
@@ -54,6 +61,9 @@ class AzureStorage(AbstractStorage):
 
     @staticmethod
     def blob_matches_manifest(blob, object_in_manifest):
+        # Azure use hashed timespan in eTag header. It changes everytime
+        # when the file is overwrote. "content-md5" is the right hash to
+        # validate the file.
         return AzureStorage.compare_with_manifest(
             actual_size=blob.size,
             size_in_manifest=object_in_manifest['size'],

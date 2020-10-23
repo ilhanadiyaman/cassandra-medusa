@@ -176,7 +176,7 @@ def i_am_using_storage_provider(context, storage_provider, client_encryption):
         config["storage"] = {
             "host_file_separator": ",",
             "bucket_name": "medusa-integration-tests",
-            "key_file": "~/medusa_credentials.json",
+            "key_file": "~/medusa_azure_credentials.json",
             "storage_provider": "azure_blobs",
             "fqdn": "127.0.0.1",
             "api_key_or_username": "",
