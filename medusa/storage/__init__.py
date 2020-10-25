@@ -67,6 +67,7 @@ class Storage(object):
             return google_storage
         elif self._config.storage_provider == Provider.AZURE_BLOBS:
             azure_storage = AzureStorage(self._config)
+            azure_storage.check_dependencies()
             return azure_storage
         elif self._config.storage_provider == Provider.S3_RGW:
             return S3RGWStorage(self._config)

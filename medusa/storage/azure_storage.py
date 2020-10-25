@@ -3,11 +3,14 @@ import io
 import json
 import logging
 import os
+import subprocess
+from subprocess import PIPE
 
 from dateutil import parser
 from libcloud.storage.drivers.azure_blobs import AzureBlobsStorageDriver
 
 from medusa.storage.abstract_storage import AbstractStorage
+import medusa.storage.azure_blobs_storage.concurrent
 import medusa
 
 
@@ -24,6 +27,16 @@ class AzureStorage(AbstractStorage):
 
         return driver
 
+    def check_dependencies(self):
+        try:
+            subprocess.check_call(["az", "help"], stdout=PIPE, stderr=PIPE)
+        except Exception:
+            raise RuntimeError(
+                "Azure cli doesn't seem to be installed on this system and is a "
+                + "required dependency for the Azure backend. "
+                + "Please check https://docs.microsoft.com/en-us/cli/azure/install-azure-cli for guidelines."
+            )
+
     def get_object_datetime(self, blob):
         logging.debug(
             "Blob {} last modification time is {}".format(
@@ -38,26 +51,19 @@ class AzureStorage(AbstractStorage):
         )
         return path
 
-    def upload_blobs(self, src, dest):
-        # After uploading file Azure doesn't set "Content-MD5" header.
-        # Only item's etag hash is available.
-        manifest = medusa.storage.concurrent.upload_blobs(
-            self, src, dest, self.bucket,
-            max_workers=self.config.concurrent_transfers
+    def upload_blobs(self, srcs, dest):
+        return medusa.storage.azure_blobs_storage.concurrent.upload_blobs(
+            self, srcs, dest, self.bucket,
+            max_workers=self.config.concurrent_transfers,
+            multi_part_upload_threshold=0,
         )
-        # Because of that problem, we reiterate the list of the objects in
-        # the directory.
-        objects = self.list_objects(dest)
-        # After overwriting some files, immediately listing the directory will return
-        # multiple instances of the same file. Here, we're checking if we are correctly
-        # adding only single instance of the file.
-        new_manifest = []
-        for obj in objects:
-            for item in manifest:
-                if (item.MD5 == obj.hash):
-                    new_manifest.append(medusa.storage.ManifestObject(obj.name, obj.size, obj.extra['md5_hash']))
-                    break
-        return new_manifest
+
+    def downlod_blobs(self, srcs, dest):
+        return medusa.storage.azure_blobs_storage.concurrent.download_blobs(
+            self, srcs, dest, self.bucket,
+            max_workers=self.config.concurrent_transfers,
+            multi_part_upload_threshold=0,
+        )
 
     @staticmethod
     def blob_matches_manifest(blob, object_in_manifest):
