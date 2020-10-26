@@ -182,6 +182,7 @@ def i_am_using_storage_provider(context, storage_provider, client_encryption):
             "api_key_or_username": "",
             "api_secret_or_password": "",
             "base_path": "/tmp",
+            "concurrent_transfers": 4,
             "prefix": storage_prefix
         }
     elif storage_provider.startswith("s3"):

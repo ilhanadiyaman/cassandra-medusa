@@ -28,6 +28,9 @@ from medusa.storage.azure_blobs_storage.azcli import AzCli
 
 MAX_UP_DOWN_LOAD_RETRIES = 5
 
+# Azure doesn't provide configuration for threshold
+MULTI_PART_UPLOAD_THRESHOLD = 64 * 1024 * 1024
+
 
 class StorageJob:
     """
@@ -64,7 +67,7 @@ class StorageJob:
 
 
 def upload_blobs(
-    storage, src, dest, bucket, max_workers=None, multi_part_upload_threshold=0
+    storage, src, dest, bucket, max_workers=None
 ):
     """
     Uploads a list of files from local storage concurrently to the remote storage.
@@ -80,14 +83,14 @@ def upload_blobs(
     job = StorageJob(
         storage,
         lambda storage, connection, src_file: __upload_file(
-            storage, connection, src_file, dest, bucket, multi_part_upload_threshold
+            storage, connection, src_file, dest, bucket
         ),
         max_workers,
     )
     return job.execute(list(src))
 
 
-def __upload_file(storage, connection, src, dest, bucket, multi_part_upload_threshold):
+def __upload_file(storage, connection, src, dest, bucket):
     """
     This function is called by StorageJob. It may be called concurrently by multiple threads.
 
@@ -110,24 +113,26 @@ def __upload_file(storage, connection, src, dest, bucket, multi_part_upload_thre
     )
     full_object_name = str("{}/{}".format(dest, obj_name))
 
-    if file_size >= multi_part_upload_threshold:
+    if file_size >= MULTI_PART_UPLOAD_THRESHOLD:
         # Files larger than the configured threshold should be uploaded as multi part
         logging.debug("Uploading {} as multi part".format(full_object_name))
         obj = _upload_multi_part(storage, connection, src, bucket, full_object_name)
     else:
         logging.debug("Uploading {} as single part".format(full_object_name))
-        obj = _upload_single_part(connection, src, bucket, full_object_name)
+        obj = _upload_single_part(storage, connection, src, bucket, full_object_name)
 
     return medusa.storage.ManifestObject(obj.name, int(obj.size), obj.extra['md5_hash'])
 
 
 @retry(stop_max_attempt_number=MAX_UP_DOWN_LOAD_RETRIES, wait_fixed=5000)
-def _upload_single_part(connection, src, bucket, object_name):
-    obj = connection.upload_object(
+def _upload_single_part(storage, connection, src, bucket, object_name):
+    _ = connection.upload_object(
         str(src), container=bucket, object_name=object_name
     )
-
-    return obj
+    # Returning object from upload doesn't have md5_hash property
+    # That's why we need to retrieve it again.
+    blob = AzCli(storage).get_blob(object_name)
+    return blob
 
 
 def _upload_multi_part(storage, connection, src, bucket, object_name):
@@ -136,7 +141,7 @@ def _upload_multi_part(storage, connection, src, bucket, object_name):
     return objects[0]
 
 
-def download_blobs(storage, src, dest, bucket, max_workers=None, multi_part_upload_threshold=0):
+def download_blobs(storage, src, dest, bucket, max_workers=None):
     """
     Download files concurrently to local storage
 
@@ -150,14 +155,14 @@ def download_blobs(storage, src, dest, bucket, max_workers=None, multi_part_uplo
     job = StorageJob(
         storage,
         lambda storage, connection, src_file: __download_blob(
-            storage, connection, src_file, str(dest), bucket, multi_part_upload_threshold
+            storage, connection, src_file, str(dest), bucket
         ),
         max_workers,
     )
     job.execute(list(src))
 
 
-def __download_blob(storage, connection, src, dest, bucket, multi_part_upload_threshold):
+def __download_blob(storage, connection, src, dest, bucket):
     """
     This function is called by StorageJob. It may be called concurrently by multiple threads.
 
@@ -180,7 +185,7 @@ def __download_blob(storage, connection, src, dest, bucket, multi_part_upload_th
             else dest
         )
 
-        if int(blob.size) >= multi_part_upload_threshold:
+        if int(blob.size) >= MULTI_PART_UPLOAD_THRESHOLD:
             # Files larger than the configured threshold should be uploaded as multi part
             logging.debug("Downloading {} as multi part".format(blob_dest))
             _download_multi_part(storage, connection, src_path, bucket, blob_dest)

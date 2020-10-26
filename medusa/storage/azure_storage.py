@@ -11,6 +11,7 @@ from libcloud.storage.drivers.azure_blobs import AzureBlobsStorageDriver
 
 from medusa.storage.abstract_storage import AbstractStorage
 import medusa.storage.azure_blobs_storage.concurrent
+from medusa.storage.azure_blobs_storage.azcli import AzCli
 import medusa
 
 
@@ -28,8 +29,9 @@ class AzureStorage(AbstractStorage):
         return driver
 
     def check_dependencies(self):
+        az_cli_path = AzCli.find_az_cli()
         try:
-            subprocess.check_call(["az", "help"], stdout=PIPE, stderr=PIPE)
+            subprocess.check_call([az_cli_path, "help"], stdout=PIPE, stderr=PIPE)
         except Exception:
             raise RuntimeError(
                 "Azure cli doesn't seem to be installed on this system and is a "
@@ -55,14 +57,12 @@ class AzureStorage(AbstractStorage):
         return medusa.storage.azure_blobs_storage.concurrent.upload_blobs(
             self, srcs, dest, self.bucket,
             max_workers=self.config.concurrent_transfers,
-            multi_part_upload_threshold=0,
         )
 
     def downlod_blobs(self, srcs, dest):
         return medusa.storage.azure_blobs_storage.concurrent.download_blobs(
             self, srcs, dest, self.bucket,
             max_workers=self.config.concurrent_transfers,
-            multi_part_upload_threshold=0,
         )
 
     @staticmethod
